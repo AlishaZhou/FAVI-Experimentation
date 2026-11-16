@@ -22,8 +22,11 @@ const sampleWidth = 320;
 const sampleHeight = 180;
 const blockSize = 12;
 const blockStep = 16;
-const maxDisplacement = 8;
+const maxDisplacement = 20;
 const zoneCount = 8;
+const firstBlockX = maxDisplacement + blockStep;
+const lastBlockX = sampleWidth - blockSize - maxDisplacement;
+const blockXSpan = lastBlockX - firstBlockX;
 const cameraCanvas = document.createElement("canvas");
 cameraCanvas.width = sampleWidth;
 cameraCanvas.height = sampleHeight;
@@ -193,7 +196,7 @@ function estimateHorizontalMotion(previous, current) {
     const rightMovingByZone = Array(zoneCount).fill(0);
 
     for (let y = blockStep; y < sampleHeight - blockSize - blockStep; y += blockStep) {
-        for (let x = maxDisplacement + blockStep; x < sampleWidth - blockSize - maxDisplacement; x += blockStep) {
+        for (let x = firstBlockX; x < lastBlockX; x += blockStep) {
             let mean = 0;
             for (let row = 0; row < blockSize; row += 1) {
                 for (let column = 0; column < blockSize; column += 1) {
@@ -209,7 +212,7 @@ function estimateHorizontalMotion(previous, current) {
                     variance += difference * difference;
                 }
             }
-            if (variance / (blockSize * blockSize) < 30) {
+            if (variance / (blockSize * blockSize) < 8) {
                 continue;
             }
 
@@ -218,12 +221,22 @@ function estimateHorizontalMotion(previous, current) {
             let stillDifference = 0;
 
             for (let displacement = -maxDisplacement; displacement <= maxDisplacement; displacement += 1) {
+                let meanDifference = 0;
+                for (let row = 0; row < blockSize; row += 1) {
+                    for (let column = 0; column < blockSize; column += 1) {
+                        const currentValue = current[(y + row) * sampleWidth + x + column];
+                        const previousValue = previous[(y + row) * sampleWidth + x - displacement + column];
+                        meanDifference += currentValue - previousValue;
+                    }
+                }
+                meanDifference /= blockSize * blockSize;
+
                 let difference = 0;
                 for (let row = 0; row < blockSize; row += 1) {
                     for (let column = 0; column < blockSize; column += 1) {
                         const currentValue = current[(y + row) * sampleWidth + x + column];
                         const previousValue = previous[(y + row) * sampleWidth + x - displacement + column];
-                        difference += Math.abs(currentValue - previousValue);
+                        difference += Math.abs(currentValue - previousValue - meanDifference);
                     }
                 }
                 difference /= blockSize * blockSize;
@@ -236,12 +249,12 @@ function estimateHorizontalMotion(previous, current) {
                 }
             }
 
-            if (bestDifference < 32 && stillDifference - bestDifference > 5) {
+            if (bestDifference < 48 && stillDifference - bestDifference > 2) {
                 if (bestDisplacement <= -2) {
-                    const zone = Math.floor(x / (sampleWidth / zoneCount));
+                    const zone = Math.min(zoneCount - 1, Math.floor((x - firstBlockX) * zoneCount / blockXSpan));
                     leftMovingByZone[zone] += 1;
                 } else if (bestDisplacement >= 2) {
-                    const zone = Math.floor(x / (sampleWidth / zoneCount));
+                    const zone = Math.min(zoneCount - 1, Math.floor((x - firstBlockX) * zoneCount / blockXSpan));
                     rightMovingByZone[zone] += 1;
                 }
             }
@@ -310,7 +323,7 @@ function detectPageTurn() {
     }
 
     const now = performance.now();
-    if (now - lastAnalyzedAt < 60) {
+    if (now - lastAnalyzedAt < 40) {
         animationFrame = requestAnimationFrame(detectPageTurn);
         return;
     }
