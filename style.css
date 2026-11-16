@@ -108,6 +108,42 @@ video {
     opacity: 0.6;
 }
 
+.camera-input {
+    position: absolute;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: max(20px, env(safe-area-inset-left));
+    z-index: 1;
+    width: min(260px, calc(100vw - 110px));
+    height: 48px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 24px;
+    background: rgba(0, 0, 0, 0.48);
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.camera-input[hidden] {
+    display: none;
+}
+
+.camera-input option {
+    background: #111;
+    color: #fff;
+}
+
+.camera-input:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 4px;
+}
+
+.camera-input:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
 .app.is-live #camera-toggle {
     top: auto;
     right: max(20px, env(safe-area-inset-right));

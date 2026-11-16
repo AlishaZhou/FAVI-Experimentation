@@ -3,6 +3,7 @@
 const video = document.querySelector("#camera");
 const app = document.querySelector("#app");
 const cameraButton = document.querySelector("#camera-toggle");
+const cameraInputSelect = document.querySelector("#camera-input");
 const flipCounterDisplay = document.querySelector("#flip-counter");
 const statusText = document.querySelector("#status");
 const audioMode = document.documentElement.dataset.audioMode || "indexed";
@@ -29,6 +30,8 @@ cameraCanvas.height = sampleHeight;
 const cameraContext = cameraCanvas.getContext("2d", { willReadFrequently: true });
 
 let cameraStream;
+let cameraDeviceId;
+let cameraDevices = [];
 let animationFrame;
 let previousFrame;
 let lastAnalyzedAt = 0;
@@ -52,6 +55,8 @@ function stopCamera() {
         cameraStream.getTracks().forEach((track) => track.stop());
         cameraStream = undefined;
     }
+    cameraDeviceId = undefined;
+    cameraDevices = [];
     video.srcObject = null;
     app.classList.remove("is-live");
     previousFrame = undefined;
@@ -59,48 +64,128 @@ function stopCamera() {
     leftToRightSweep = undefined;
     cameraButton.setAttribute("aria-label", "Start camera");
     cameraButton.setAttribute("aria-pressed", "false");
+    if (cameraInputSelect) {
+        cameraInputSelect.hidden = true;
+        cameraInputSelect.disabled = true;
+    }
     setStatus("Camera is off", "idle");
 }
 
-async function startCamera() {
+async function startCamera(deviceId) {
     if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("Camera access is not available in this browser.", "error");
         return;
     }
 
+    const previousStream = cameraStream;
+    let nextStream;
+    if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = undefined;
+    }
     cameraButton.disabled = true;
-    setStatus("Waiting for camera permission…", "idle");
+    if (cameraInputSelect) {
+        cameraInputSelect.disabled = true;
+    }
+    setStatus(previousStream ? "Switching camera input…" : "Waiting for camera permission…", "idle");
 
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
+        nextStream = await navigator.mediaDevices.getUserMedia({
             audio: false,
-            video: { facingMode: "environment" }
+            video: deviceId ? { deviceId: { exact: deviceId } } : true
         });
-        video.srcObject = cameraStream;
+        video.srcObject = nextStream;
         await video.play();
+        cameraStream = nextStream;
+        const videoTrack = nextStream.getVideoTracks()[0];
+        cameraDeviceId = videoTrack?.getSettings?.().deviceId || deviceId;
+        if (previousStream) {
+            previousStream.getTracks().forEach((track) => track.stop());
+        }
         app.classList.add("is-live");
         cameraButton.setAttribute("aria-label", "Stop camera");
         cameraButton.setAttribute("aria-pressed", "true");
+        previousFrame = undefined;
+        rightToLeftSweep = undefined;
+        leftToRightSweep = undefined;
         setStatus("Ready — turn a page right to left", "ready");
+        try {
+            await refreshCameraDevices();
+        } catch {
+            if (cameraInputSelect) {
+                cameraInputSelect.hidden = true;
+                cameraInputSelect.disabled = true;
+            }
+            setStatus("Camera started, but available inputs could not be listed.", "error");
+        }
         animationFrame = requestAnimationFrame(detectPageTurn);
     } catch (error) {
-        if (cameraStream) {
-            cameraStream.getTracks().forEach((track) => track.stop());
-            cameraStream = undefined;
+        if (nextStream) {
+            nextStream.getTracks().forEach((track) => track.stop());
         }
-        video.srcObject = null;
-        app.classList.remove("is-live");
 
-        if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+        cameraStream = previousStream;
+        video.srcObject = previousStream || null;
+        if (previousStream) {
+            try {
+                await refreshCameraDevices();
+            } catch {
+                if (cameraInputSelect) {
+                    cameraInputSelect.hidden = true;
+                    cameraInputSelect.disabled = true;
+                }
+            }
+            animationFrame = requestAnimationFrame(detectPageTurn);
+            setStatus("Could not switch camera; the previous input remains active.", "error");
+        } else if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+            app.classList.remove("is-live");
             setStatus("Allow camera access in your browser to begin.", "error");
         } else if (error.name === "NotFoundError") {
+            app.classList.remove("is-live");
             setStatus("No camera was found on this device.", "error");
         } else {
+            app.classList.remove("is-live");
             setStatus("The camera could not be started. Please try again.", "error");
         }
     } finally {
         cameraButton.disabled = false;
+        if (cameraInputSelect) {
+            cameraInputSelect.disabled = cameraInputSelect.hidden || !cameraStream;
+        }
     }
+}
+
+async function refreshCameraDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+        cameraDevices = [];
+        if (cameraInputSelect) {
+            cameraInputSelect.hidden = true;
+            cameraInputSelect.disabled = true;
+        }
+        return cameraDevices;
+    }
+
+    cameraDevices = (await navigator.mediaDevices.enumerateDevices())
+        .filter((device) => device.kind === "videoinput" && device.deviceId);
+    const activeDeviceId = cameraStream?.getVideoTracks()[0]?.getSettings?.().deviceId;
+    if (activeDeviceId) {
+        cameraDeviceId = activeDeviceId;
+    }
+    if (cameraInputSelect) {
+        cameraInputSelect.replaceChildren();
+        cameraDevices.forEach((device, index) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+            option.textContent = device.label || `Camera ${index + 1}`;
+            cameraInputSelect.append(option);
+        });
+        cameraInputSelect.hidden = cameraDevices.length < 2;
+        cameraInputSelect.disabled = cameraDevices.length < 2;
+        cameraInputSelect.value = cameraDeviceId && cameraDevices.some((device) => device.deviceId === cameraDeviceId)
+            ? cameraDeviceId
+            : cameraDevices[0]?.deviceId || "";
+    }
+    return cameraDevices;
 }
 
 function estimateHorizontalMotion(previous, current) {
@@ -366,4 +451,24 @@ cameraButton.addEventListener("click", () => {
     } else {
         startCamera();
     }
+});
+
+cameraInputSelect?.addEventListener("change", () => {
+    if (cameraInputSelect.value && cameraInputSelect.value !== cameraDeviceId) {
+        startCamera(cameraInputSelect.value);
+    }
+});
+
+navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    if (!cameraStream) {
+        return;
+    }
+
+    refreshCameraDevices().catch(() => {
+        if (cameraInputSelect) {
+            cameraInputSelect.hidden = true;
+            cameraInputSelect.disabled = true;
+        }
+        setStatus("Camera inputs could not be refreshed.", "error");
+    });
 });
