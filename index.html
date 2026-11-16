@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#000000">
+    <title>Page Turn Audio</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <main class="app" id="app">
+        <div class="camera-frame">
+            <video id="camera" autoplay muted playsinline aria-label="Live camera preview"></video>
+        </div>
+        <button id="camera-toggle" type="button" aria-label="Start camera" aria-pressed="false">
+            <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+                <path d="M5 10.5h5l2-3h8l2 3h5v15H5z"></path>
+                <circle cx="16" cy="18" r="5"></circle>
+            </svg>
+        </button>
+        <output id="flip-counter" class="flip-counter" aria-label="Page 0 of 10">0 / 10</output>
+        <span class="visually-hidden" id="status" role="status" aria-live="polite">Camera is off</span>
+    </main>
+</body>
+</html>
